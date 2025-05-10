@@ -18,6 +18,7 @@ Parsers = {
 };
 
 const files = ["example.py", "example.ts", "example.go"];
+window.authWithGoogle("token_2123-322", "admin_user");
 const sourceCodes = files.map((file) =>
   fs.readFileSync(`./source/${file}`, "utf8"),
 );
