@@ -1,116 +1,47 @@
-const Parser = require("tree-sitter");
-const JavaScript = require("tree-sitter-javascript");
-const TypeScript = require("tree-sitter-typescript");
-const Python = require("tree-sitter-python");
-const Go = require("tree-sitter-go");
+import express from 'express';
+import { exec } from 'child_process';
+import fs from 'fs';
+import mysql from 'mysql';
 
-const walker = require("./utils/ast/walker");
-const replacer = require("./utils/ast/replacer");
-const generators = require("./utils/ast/generators");
+const app = express();
+app.use(express.json());
 
-const fs = require("fs");
-
-Parsers = {
-  js: JavaScript,
-  ts: TypeScript.typescript,
-  py: Python,
-  go: Go,
-};
-
-const files = ["example.py", "example.ts", "example.go"];
-const sourceCodes = files.map((file) =>
-  fs.readFileSync(`./source/${file}`, "utf8"),
-);
-const nodeTypes = {
-  imports: {
-    importFromNode: "import_from_statement",
-    importStatement: "import_statement",
-    importDeclaration: "import_declaration",
-  },
-  functionDeclaration: {
-    functionDefinition: "function_definition",
-    functionDeclaration: "function_declaration",
-  },
-};
-sourceCodes.forEach((sourceCode, index) => {
-  const parser = new Parser();
-  const fileType = files[index].split(".")[1];
-  parser.setLanguage(Parsers[fileType]);
-  const tree = parser.parse(sourceCode);
-  // finding all import statements
-  const nodes = walker(tree.rootNode, nodeTypes.imports);
-  console.log(
-    `Number of import statements in ${files[index]}: ${nodes.length}, they are:`,
-  );
-  nodes.forEach((node) => {
-    console.log(node.text);
-  });
-  // appending a new import statement
-  const nodeToReplace = nodes[nodes.length - 1];
-  const replacement = generators[fileType].generate("importDeclaration", {
-    source: "foo",
-    name: "bar",
-  });
-  let newTree = replacer(
-    tree,
-    nodeToReplace,
-    `${nodeToReplace.text}\n${replacement}`,
-    (source) => parser.parse(source),
-  );
-  fs.writeFileSync(`./source/out.${files[index]}`, newTree.getText(0));
-
-  //finding a function and printing it
-  const functionNodes = walker(newTree.rootNode, nodeTypes.functionDeclaration);
-  if (functionNodes.length > 0)
-    console.log(`first function in ${files[index]}:\n${functionNodes[0].text}`);
-
-  //replacing the first function with a new function
-  const functionNodeToReplace = functionNodes[0];
-  const functionName = walker(functionNodeToReplace, "identifier")[0].text;
-  // this doesn't cover all cases of function parameters
-  let functionParametersIdentifier = [];
-  const functionParameterNode = walker(
-    functionNodeToReplace,
-    ["parameters", "formal_parameters"],
-    1,
-  )[0];
-  if (functionParameterNode) {
-    const functionParametersRequiredParams = walker(
-      functionParameterNode,
-      "required_parameter",
-    ).map((node) => node.text);
-    const functionParametersOptionalParams = walker(
-      functionParameterNode,
-      "optional_parameter",
-    ).map((node) => node.text);
-    functionParametersIdentifier = walker(
-      functionParameterNode,
-      "identifier",
-    ).map((node) => node.text);
-    if (
-      functionParametersRequiredParams.length > 0 ||
-      functionParametersOptionalParams.length > 0
-    ) {
-      functionParametersIdentifier = functionParametersRequiredParams.concat(
-        functionParametersOptionalParams,
-      );
-    }
-  }
-  const functionReplacement = generators[fileType].generate(
-    "functionDeclaration",
-    {
-      name: functionName,
-      parameters: functionParametersIdentifier,
-      body: fileType == "py" ? "pass" : "// comment",
-      returnType: "void",
-      node: functionNodeToReplace,
-    },
-  );
-  newTree = replacer(
-    newTree,
-    functionNodeToReplace,
-    functionReplacement,
-    (source) => parser.parse(source),
-  );
-  fs.writeFileSync(`./source/out.${files[index]}`, newTree.getText(0));
+// Hardcoded credentials
+const db = mysql.createConnection({
+    host: 'localhost',
+    user: 'admin',
+    password: 'admin123', // SENSITIVE: Hardcoded password
+    database: 'testdb'
 });
+
+app.get('/xss', (req, res) => {
+    const name = req.query.name;
+    res.send(`<h1>Hello ${name}</h1>`); // XSS: Unsanitized output
+});
+
+app.post('/sql', (req, res) => {
+    const user = req.body.username;
+    const query = `SELECT * FROM users WHERE name = '${user}'`; // SQL Injection
+    db.query(query, (err, results) => {
+        if (err) throw err;
+        res.json(results);
+    });
+});
+
+app.get('/run', (req, res) => {
+    const cmd = req.query.cmd as string;
+    exec(cmd, (err, stdout, stderr) => { // Command Injection
+        if (err) return res.send(err.message);
+        res.send(stdout);
+    });
+});
+
+app.get('/read', (req, res) => {
+    const file = req.query.file as string;
+    fs.readFile(file, 'utf8', (err, data) => { // Insecure file read
+        if (err) return res.status(500).send('Error');
+        res.send(data);
+    });
+});
+
+app.listen(3000, () => console.log('Server started on port 3000'));
