@@ -9,7 +9,7 @@ const replacer = require("./utils/ast/replacer");
 const generators = require("./utils/ast/generators");
 
 const fs = require("fs");
-
+  
 Parsers = {
   js: JavaScript,
   ts: TypeScript.typescript,
